@@ -1,5 +1,5 @@
 const assert = require('assert');
-const testee = require('../src/expression/parser.js');
+const testee = require('../../src/expression/parser.js');
 
 describe('expression', function() {
 	describe('parse(exprStr)', function() {
@@ -16,8 +16,8 @@ describe('expression', function() {
 			'VAR=o.myfn()',
 			'VAR={}',
 			'{}',
-			'{x, 123.9}',
-			'{123.9, BigDecimal.valueOf(0.1)}',
+			'{x,123.9,3}',
+			'{123.9,BigDecimal.valueOf(0.1)}',
 			'func()',
 			'func(753.9)',
 			'a(b(753))',
@@ -34,6 +34,10 @@ describe('expression', function() {
 			'3!=7',
 			'3!=y',
 			'x!=7',
+			'x<y',
+			'3<7',
+			'3>y',
+			'x>7',
 			'x+y',
 			'3+7',
 			'x+7',
@@ -44,6 +48,7 @@ describe('expression', function() {
 			'3-y',
 			'3--7',
 			'3+-7',
+			'(3+7)',
 		];
 		for (let expr of cases) {
 			it('should parse: ' + expr, function(expr) {
@@ -51,7 +56,7 @@ describe('expression', function() {
 			}.bind(null, expr));
 		}
 		for (let expr of cases) {
-			whExpr = ' ' + expr.replace(/[^a-z_0-9\. ]|[a-z_ ]+\.|\.[a-z_ ]+/ig, ' $& ') + ' ';
+			let whExpr = ' ' + expr.replace(/[^a-z_0-9\. ]|[a-z_ ]+\.|\.[a-z_ ]+/ig, ' $& ') + ' ';
 			it('should parse wh: ' + whExpr, function(expr, whExpr) {
 				assert.equal(testee.parse(whExpr).toString(), expr);
 			}.bind(null, expr, whExpr))
@@ -63,6 +68,8 @@ describe('expression', function() {
 			'- ',
 			' - ',
 			'+',
+			'<',
+			'>',
 			'0.0.0',
 			'.',
 			'.key',
@@ -73,7 +80,6 @@ describe('expression', function() {
 			'}',
 			'(',
 			'()',
-			'(x)',
 			'func(',
 			'func(3',
 			')',
@@ -88,6 +94,8 @@ describe('expression', function() {
 			'x==',
 			'x!',
 			'x!=',
+			'x<=',
+			'x>=',
 			'x+',
 			'x-',
 		];

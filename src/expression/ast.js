@@ -15,7 +15,7 @@ class ListExpression {
 		return visitor.list(this.exprList);
 	}
 	toString() {
-		return '{' + this.exprList.join(', ') + '}';
+		return '{' + this.exprList.join(',') + '}';
 	}
 }
 
@@ -81,6 +81,9 @@ class NameExpression extends NameExpressionBase {
 
 class ConstructorRefExpression {
 	constructor(typeRefExpr) {
+		if (typeRefExpr.literal) {
+			throw new SemanticError('Cannot use literal ' + typeRefExpr + ' as constructor');
+		}
 		this.typeRefExpr = typeRefExpr;
 		this.literal = false;
 	}

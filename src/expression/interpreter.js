@@ -1,12 +1,7 @@
 import BigNumber from 'bignumber.js';
 
 export default function evaluate(expr, scope) {
-	try {
-		return expr.visit(new ExpressionInterpreter(scope));
-	} catch(e) {
-		e.message = 'failed to evaluate: ' + expr + '\n\t' + e.message;
-		throw e;
-	}
+	return expr.visit(new ExpressionInterpreter(scope));
 }
 
 class ExpressionInterpreter {
@@ -52,9 +47,10 @@ class ExpressionInterpreter {
 		if (t !== 'function') {
 			throw new Error(expr.refExpr + ' is not a function but ' + t);
 		}
+		let args = expr.argExprList.map(e => e.visit(this));
 		let v;
 		try {
-			v = fn.apply(null, expr.argExprList.map(e => e.visit(this)));
+			v = fn.apply(null, args);
 		} catch(e) {
 			e.message = 'failed to call ' + expr + ': ' + e.message;
 			throw e;
@@ -98,10 +94,16 @@ class ExpressionInterpreter {
 	minus(leftExpr, rightExpr) {
 		return this.requireNumber(leftExpr, '-').minus(this.requireNumber(rightExpr, '-'));
 	}
+	gt(leftExpr, rightExpr) {
+		return this.requireNumber(leftExpr, '>').gt(this.requireNumber(rightExpr, '>'));
+	}
+	lt(leftExpr, rightExpr) {
+		return this.requireNumber(leftExpr, '<').lt(this.requireNumber(rightExpr, '<'));
+	}
 	requireNumber(expr, op) {
 		let v = expr.visit(this);
 		if (!(v instanceof BigNumber)) {
-			throw new Error(op + ' operation requires numeric operands but ' + expr + ' returned ' + t);
+			throw new Error(op + ' operation requires numeric operands but ' + expr + ' returned ' + (typeof v));
 		}
 		return v;
 	}

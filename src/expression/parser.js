@@ -26,13 +26,15 @@ const number = new CharMatcher('NUMBER', numberMatcher);
 const name = new CharMatcher('LETTER', c => c >= 65 && c <= 90 || c >= 97 && c <= 122 || c === 95 || digitMatcher(c));
 const listStart = CharMatcher.forChar('{');
 const listEnd = CharMatcher.forChar('}');
-const callStart = CharMatcher.forChar('(');
-const callEnd = CharMatcher.forChar(')');
+const bracketOpen = CharMatcher.forChar('(');
+const bracketClose = CharMatcher.forChar(')');
 const listItemSep = CharMatcher.forChar(',');
 const dot = CharMatcher.forChar('.');
 const equal = CharMatcher.forChar('=');
 const plus = CharMatcher.forChar('+');
 const minus = CharMatcher.forChar('-');
+const gt = CharMatcher.forChar('>');
+const lt = CharMatcher.forChar('<');
 const sign = minus;
 const exclamationMark = CharMatcher.forChar('!');
 const anyMatcher = new CharMatcher('ITEM', c => true);
@@ -60,6 +62,7 @@ const valueRule = [
 	match(minus, parseNumber),
 	match(name, parseName),
 	match(listStart, parseList),
+	match(bracketOpen, parseParenthesis),
 ];
 
 function parseExpression(ctx) {
@@ -73,13 +76,28 @@ function parseExpression(ctx) {
 
 function parseOperation(ctx, leftOperand) {
 	return ctx.parse([
+		match(bracketOpen, functionCallParser(leftOperand)),
 		match(dot, dereferenceParser(leftOperand)),
-		match(callStart, functionCallParser(leftOperand)),
 		match(equal, assignmentOrEqualParser(leftOperand)),
 		match(exclamationMark, notEqualParser(leftOperand)),
 		match(plus, binaryOperationParser(leftOperand, '+', 'plus')),
 		match(minus, binaryOperationParser(leftOperand, '-', 'minus')),
+		match(gt, binaryOperationParser(leftOperand, '>', 'gt')),
+		match(lt, binaryOperationParser(leftOperand, '<', 'lt')),
 	], leftOperand);
+}
+
+function parseParenthesis(ctx) {
+	ctx.pos++;
+	let expr = parseExpression(ctx);
+	ctx.parse([
+		match(bracketClose, incrementPos),
+	]);
+	return expr;
+}
+
+function incrementPos(ctx) {
+	ctx.pos++;
 }
 
 function dereferenceParser(expr) {
@@ -94,8 +112,9 @@ function dereferenceParser(expr) {
 
 function functionCallParser(ref) {
 	return ctx => {
+		ctx.pos++;
 		let args = [];
-		let list = parseListItems(ctx, args, callEnd, ctx => {
+		let list = parseListItems(ctx, args, bracketClose, ctx => {
 			let expr = new ast.FunctionCallExpression(ref, args);
 			ctx.pos++;
 			return expr;
@@ -105,6 +124,7 @@ function functionCallParser(ref) {
 }
 
 function parseList(ctx) {
+	ctx.pos++;
 	let list = [];
 	return parseListItems(ctx, list, listEnd, ctx => {
 		let expr = new ast.ListExpression(list);
@@ -114,7 +134,6 @@ function parseList(ctx) {
 }
 
 function parseListItems(ctx, items, endMatcher, buildExpr) {
-	ctx.pos++;
 	return ctx.parse([
 		match(endMatcher, buildExpr),
 		match(anyMatcher, ctx => {
@@ -206,7 +225,7 @@ class ParserContext {
 		}
 	}
 	finish() {
-		if (this.pos < this.expr.length) {
+		if (this.hasMore()) {
 			throw new ParserError('Unexpected character "' + this.char + '" after end of expression!');
 		}
 	}
