@@ -10,15 +10,28 @@ describe('expression', function() {
 		['v = 7 + 11 - 8', new BigNumber(10), 'v'],
 		['mynum - 1', new BigNumber(122.5)],
 		['1 < 2', true],
+		['1 <= 2', true],
 		['2 < 2', false],
+		['2 <= 2', true],
 		['2 > 1', true],
+		['2 >= 1', true],
 		['2 > 2', false],
+		['2 >= 2', true],
+		['x = 3 + 7', new BigNumber(10), 'x'],
+		['5 + 3 - 7', new BigNumber(1)],
+		['5 == 8 - 3', true],
+		['x = mynum == myvar || mynum == 123.5', true, 'x'],
+		['x = 5 == func(3, 2).b + 3', true, 'x'],
+		['x = 5 == 3 + func(3, 2).b', true, 'x'],
+		['5 + calc(1,2) * 7', new BigNumber(26)],
+		['5 + calc(1,2) / 6', new BigNumber(5.5)],
 	]);
 })
 
 function testCases(name, mapInput, addCases) {
 	describe(name, function() {
-		let fn = function(a, b) {return {a: a, b: b};};
+		let fn = (a,b) => {return {a: a, b: b}};
+		let calcFn = (a,b) => a.plus(b);
 		let num1 = new BigNumber('123.5');
 		let num2 = new BigNumber('0.00350000005400000456');
 		let num1Expr = new ast.NumberExpression(num1.toFixed());
@@ -36,9 +49,11 @@ function testCases(name, mapInput, addCases) {
 			[constrExpr, function(){}],
 			[new ast.FunctionCallExpression(new ast.NameExpression('func'), [num1Expr, nameExpr]), fn(num1, resolvedName)],
 			[new ast.FunctionCallExpression(constrExpr, [num1Expr, nameExpr]), fn(num1, resolvedName)],
-			[new ast.AssignmentExpression(new ast.NameExpression(scopeName), num1Expr), num1, scopeName],
+			[new ast.BinaryOperationExpression('=', 'assign', new ast.NameExpression(scopeName), num1Expr), num1, scopeName],
 			[new ast.BinaryOperationExpression('+', 'plus', num1Expr, num2Expr), plusResult],
 			[new ast.BinaryOperationExpression('-', 'minus', num1Expr, num2Expr), minusResult],
+			[new ast.BinaryOperationExpression('*', 'multiply', num1Expr, num2Expr), num1.multipliedBy(num2)],
+			[new ast.BinaryOperationExpression('/', 'divide', num1Expr, num2Expr), num1.dividedBy(num2)],
 			[new ast.BinaryOperationExpression('==', 'equal', num1Expr, num2Expr), false],
 			[new ast.BinaryOperationExpression('!=', 'notEqual', num1Expr, num2Expr), true],
 			[new ast.BinaryOperationExpression('==', 'equal', num1Expr, num1Expr), true],
@@ -57,6 +72,7 @@ function testCases(name, mapInput, addCases) {
 					mystr: 'mockstring',
 					mynum: num1,
 					func: fn,
+					calc: calcFn,
 					MyType: {construct: fn},
 				}
 				let actual = evaluate(mapInput(c[0]), scope);

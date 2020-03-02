@@ -15,7 +15,7 @@ class ListExpression {
 		return visitor.list(this.exprList);
 	}
 	toString() {
-		return '{' + this.exprList.join(',') + '}';
+		return `{${this.exprList.join(',')}}`;
 	}
 }
 
@@ -32,7 +32,7 @@ class FunctionCallExpression {
 		return visitor.call(this);
 	}
 	toString() {
-		return this.refExpr + '(' + this.argExprList.join(',') + ')';
+		return `${this.refExpr}(${this.argExprList.join(',')})`;
 	}
 }
 
@@ -79,6 +79,32 @@ class NameExpression extends NameExpressionBase {
 	}
 }
 
+class BinaryOperationExpression {
+	constructor(opSymbol, visitorOp, left, right) {
+		if (opSymbol === '=') {
+			if (!(left instanceof NameExpression)) {
+				throw new SemanticError('Cannot assign to ' + left);
+			}
+		}
+		this.opSymbol = opSymbol;
+		this.visitorOp = visitorOp;
+		this.leftExpr = left;
+		this.rightExpr = right;
+		this.literal = false;
+	}
+	visit(visitor) {
+		let op = visitor[this.visitorOp];
+		if (!op) {
+			throw new Error(`Unsupported visitor function "${this.visitorOp}"`);
+		}
+		return visitor[this.visitorOp](this.leftExpr, this.rightExpr);
+	}
+	toString() {
+		let right = this.rightExpr instanceof BinaryOperationExpression ? `(${this.rightExpr})` : this.rightExpr;
+		return `${this.leftExpr}${this.opSymbol}${right}`;
+	}
+}
+
 class ConstructorRefExpression {
 	constructor(typeRefExpr) {
 		if (typeRefExpr.literal) {
@@ -95,38 +121,12 @@ class ConstructorRefExpression {
 	}
 }
 
-class BinaryOperationExpression {
-	constructor(opSymbol, visitorOp, left, right) {
-		this.opSymbol = opSymbol;
-		this.visitorOp = visitorOp;
-		this.leftExpr = left;
-		this.rightExpr = right;
-		this.literal = false;
-	}
-	visit(visitor) {
-		return visitor[this.visitorOp](this.leftExpr, this.rightExpr);
-	}
-	toString() {
-		return this.leftExpr + this.opSymbol + this.rightExpr;
-	}
-}
-
-class AssignmentExpression extends BinaryOperationExpression {
-	constructor(ref, expr) {
-		super('=', 'assign', ref, expr);
-		if (!(ref instanceof NameExpression)) {
-			throw new SemanticError('Cannot assign to ' + ref);
-		}
-	}
-}
-
 export default {
 	SemanticError,
 	NameExpression,
 	NumberExpression,
 	ListExpression,
-	ConstructorRefExpression,
 	FunctionCallExpression,
 	BinaryOperationExpression,
-	AssignmentExpression,
+	ConstructorRefExpression,
 };

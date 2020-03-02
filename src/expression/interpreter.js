@@ -88,11 +88,23 @@ class ExpressionInterpreter {
 	notEqual(leftExpr, rightExpr) {
 		return !this.equal(leftExpr, rightExpr);
 	}
+	or(leftExpr, rightExpr) {
+		return this.requireBool(leftExpr, '||') || this.requireBool(rightExpr, '||');
+	}
+	and(leftExpr, rightExpr) {
+		return this.requireBool(leftExpr, '&&') && this.requireBool(rightExpr, '&&');
+	}
 	plus(leftExpr, rightExpr) {
 		return this.requireNumber(leftExpr, '+').plus(this.requireNumber(rightExpr, '+'));
 	}
 	minus(leftExpr, rightExpr) {
 		return this.requireNumber(leftExpr, '-').minus(this.requireNumber(rightExpr, '-'));
+	}
+	multiply(leftExpr, rightExpr) {
+		return this.requireNumber(leftExpr, '*').times(this.requireNumber(rightExpr, '*'));
+	}
+	divide(leftExpr, rightExpr) {
+		return this.requireNumber(leftExpr, '/').div(this.requireNumber(rightExpr, '/'));
 	}
 	gt(leftExpr, rightExpr) {
 		return this.requireNumber(leftExpr, '>').gt(this.requireNumber(rightExpr, '>'));
@@ -100,10 +112,24 @@ class ExpressionInterpreter {
 	lt(leftExpr, rightExpr) {
 		return this.requireNumber(leftExpr, '<').lt(this.requireNumber(rightExpr, '<'));
 	}
+	gte(leftExpr, rightExpr) {
+		return this.requireNumber(leftExpr, '>=').gte(this.requireNumber(rightExpr, '>='));
+	}
+	lte(leftExpr, rightExpr) {
+		return this.requireNumber(leftExpr, '<=').lte(this.requireNumber(rightExpr, '<='));
+	}
 	requireNumber(expr, op) {
 		let v = expr.visit(this);
 		if (!(v instanceof BigNumber)) {
 			throw new Error(op + ' operation requires numeric operands but ' + expr + ' returned ' + (typeof v));
+		}
+		return v;
+	}
+	requireBool(expr, op) {
+		let v = expr.visit(this);
+		let t = typeof v;
+		if (t !== 'boolean') {
+			throw new Error(op + ' operation requires boolean operands but ' + expr + ' returned ' + t);
 		}
 		return v;
 	}

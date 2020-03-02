@@ -52,7 +52,7 @@ function transformVariable(el, a, r, comment) {
 function transformMethod(el, a, r, comment) {
 	let name = a.name || 'MAIN'
 	if (r.methods[name]) {
-		throw new Error('Duplicate method: ' + name);
+		throw new Error(`Duplicate method "${name}"`);
 	}
 	let expr = new PAPMethod(name, transformChildren(el, exprTransformers), comment);
 	r.methods[name] = expr;
@@ -94,7 +94,7 @@ let papChildTransformer = {
 	MAIN: transformMethod,
 };
 let exprTransformers = {
-	IF: (n,a) => new IfExpression(parse(a.expr), transformChildren(n, thenTransformers)[0], transformChildren(n, elseTransformers)[0]),
+	IF: (n,a) => new IfExpression(parse(a.expr), new BlockExpression(transformChildren(n, thenTransformers)[0]), new BlockExpression(transformChildren(n, elseTransformers)[0])),
 	EVAL: (n,a) => parse(a.exec),
 	EXECUTE: (n,a) => new ast.FunctionCallExpression(new ast.NameExpression(a.method), []),
 };
@@ -109,7 +109,6 @@ let elseTransformers = {
 
 class PAP {
 	constructor(pap) {
-		console.log(pap);
 		let docEl = pap.documentElement;
 		if (docEl.tagName !== 'PAP') {
 			throw new Error('No PAP XML provided');
@@ -120,13 +119,11 @@ class PAP {
 		if (!this.methods.MAIN) {
 			throw new Error('No MAIN method specified within PAP XML');
 		}
-
-		console.log(obj);
 	}
 	evaluate(input) {
 		let scope = this.buildScope();
 		Object.assign(scope, input);
-		evaluate(this.methods.MAIN, scope);
+		this.methods.MAIN.evaluate(scope);
 	}
 	buildScope() {
 		let scope = newScope();
@@ -136,17 +133,17 @@ class PAP {
 	populateScope(scope) {
 		for (let varDef of this.vars) {
 			if (scope[varDef.name] !== undefined) {
-				throw new Error('Duplicate definition of PAP var ${varDef.name}');
+				throw new Error(`Duplicate definition of PAP var ${varDef.name}`);
 			}
 			scope[varDef.name] = varDef.evaluate(scope);
 		}
-		for (let procDef of this.methods) {
-			if (scope[procDef.name] !== undefined) {
-				throw new Error('Duplicate definition of PAP scope name ${varDef.name} (method)');
+		for (let m of Object.values(this.methods)) {
+			if (scope[m.name] !== undefined) {
+				throw new Error(`Duplicate definition of PAP scope name ${varDef.name} (method)`);
 			}
-			scope[procDef.name] = function(expr) {
-				return expr.visit(scope);
-			}.bind(null, procDef);
+			scope[m.name] = function(method) {
+				return method.evaluate(scope);
+			}.bind(null, m);
 		}
 	}
 }
@@ -155,9 +152,37 @@ class BigDecimal {
 	constructor(num) {
 		this.num = num;
 	}
+	setScale(scale, roundingMode) {
+		let BN = BigNumber.clone({DECIMAL_PLACES: toInt(scale), ROUNDING_MODE: toInt(roundingMode)});
+		return new BigDecimal(new BN(this.num.toFixed()));
+	}
+	add(n) {
+		return new BigDecimal(this.num.plus(n.num));
+	}
+	subtract(n) {
+		return new BigDecimal(this.num.minus(n.num));
+	}
+	multiply(n) {
+		return new BigDecimal(this.num.times(n.num));
+	}
+	compareTo(n) {
+		if (!(n instanceof BigDecimal)) {
+			throw new Error('No BigDecimal provided to compareTo(o)');
+		}
+		return this.num.comparedTo(n.num);
+	}
 	toString() {
 		return this.num.toString();
 	}
+}
+
+function toInt(num) {
+	let numStr = num.toFixed();
+	let i = parseInt(numStr);
+	if (numStr !== '' + i) {
+		throw new Error(`Cannot convert ${num} to int`);
+	}
+	return i;
 }
 
 function newScope() {
@@ -166,7 +191,10 @@ function newScope() {
 			construct: function(n) {
 				return new BigDecimal(n);
 			},
-			ONE: new BigDecimal(new BigNumber(0))
+			ZERO: new BigDecimal(new BigNumber(0)),
+			ONE: new BigDecimal(new BigNumber(1)),
+			ROUND_UP: new BigNumber(0),
+			ROUND_DOWN: new BigNumber(1),
 		}
 	};
 }
@@ -194,7 +222,7 @@ class PAPMethod {
 		this.comment = comment;
 	}
 	evaluate(scope) {
-		return this.exprList.reduce(null, (_,expr) => evaluate(expr, scope));
+		return this.exprList.reduce((_,expr) => evaluate(expr, scope));
 	}
 }
 
@@ -225,7 +253,7 @@ class BlockExpression {
 		this.exprList = exprList;
 	}
 	visit(visitor) {
-		return this.exprList.reduce(null, (_,expr) => expr.visit(visitor));
+		return this.exprList.reduce((_,expr) => expr.visit(visitor), null);
 	}
 	toString() {
 		let item = this.exprList.map(e => `\n  ${e}`).join('');
