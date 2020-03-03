@@ -26,6 +26,10 @@ describe('expression', function() {
 			['{x}.sublist(1)'],
 			['new BigDecimal(123.5)'],
 			['new BigDecimal(123.5).add(7.1)'],
+			['myvar[0]'],
+			['myfn()[0]'],
+			['{a,b}[0]'],
+			['x[0]=a'],
 			['x==y'],
 			['3==7'],
 			['3==y'],
@@ -103,6 +107,8 @@ describe('expression', function() {
 			'{',
 			'{.}',
 			'{,}',
+			'[',
+			']',
 			'}',
 			'(',
 			'()',
@@ -126,6 +132,7 @@ describe('expression', function() {
 			'x-',
 			'x&',
 			'x|',
+			'x x',
 		];
 		for (let expr of invalid) {
 			it('should reject: ' + expr, function(expr) {

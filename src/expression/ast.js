@@ -79,11 +79,24 @@ class NameExpression extends NameExpressionBase {
 	}
 }
 
+class KeyExpression {
+	constructor(targetExpr, keyExpr) {
+		this.targetExpr = targetExpr;
+		this.keyExpr = keyExpr;
+	}
+	visit(visitor) {
+		return visitor.key(this);
+	}
+	toString() {
+		return `${this.targetExpr}[${this.keyExpr}]`;
+	}
+}
+
 class BinaryOperationExpression {
 	constructor(opSymbol, visitorOp, left, right) {
 		if (opSymbol === '=') {
-			if (!(left instanceof NameExpression)) {
-				throw new SemanticError('Cannot assign to ' + left);
+			if (!(left instanceof NameExpression) && !(left instanceof KeyExpression)) {
+				throw new SemanticError(`Can only assign to name or list index but provided ${left}`);
 			}
 		}
 		this.opSymbol = opSymbol;
@@ -126,6 +139,7 @@ export default {
 	NameExpression,
 	NumberExpression,
 	ListExpression,
+	KeyExpression,
 	FunctionCallExpression,
 	BinaryOperationExpression,
 	ConstructorRefExpression,

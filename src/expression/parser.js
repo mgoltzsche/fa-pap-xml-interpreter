@@ -1,6 +1,6 @@
 import ast from './ast.js';
 
-const escapeRegex = /\+|\.|\||\*/g;
+const escapeRegex = /\+|\.|\||\*|\[|\]/g;
 const matcher = regex => new RegExp(`^${regex}`);
 const whitespace = matcher('\\s*');
 const digit = matcher('[0-9]+');
@@ -11,6 +11,8 @@ const listEnd = matcher('}');
 const bracketOpen = matcher('\\(');
 const bracketClose = matcher('\\)');
 const listItemSep = matcher(',');
+const squareBracketOpen = matcher('\\[');
+const squareBracketClose = matcher('\\]');
 const dereference = matcher('\\.');
 const anyMatcher = matcher('');
 const op = (symbol,name,strength) => {
@@ -68,18 +70,19 @@ const operations = [
 	op('&&', 'and', 3),
 	op('==', 'equal', 4),
 	op('!=', 'notEqual', 4),
-	op('>=', 'gte', 5),
-	op('<=', 'lte', 5),
 	op('=', 'assign', 1),
-	op('>', 'gt', 5),
-	op('<', 'lt', 5),
-	op('+', 'plus', 6),
-	op('-', 'minus', 6),
-	op('*', 'multiply', 7),
-	op('/', 'divide', 7),
+	op('>=', 'gte', 4),
+	op('<=', 'lte', 4),
+	op('>', 'gt', 4),
+	op('<', 'lt', 4),
+	op('+', 'plus', 5),
+	op('-', 'minus', 5),
+	op('*', 'multiply', 6),
+	op('/', 'divide', 6),
 ];
 const whitespaceRule = [match(whitespace, _ => {})];
 const parenthesisCloseRule = [match(bracketClose, _ => {})];
+const squareBracketCloseRule = [match(squareBracketClose, _ => {})];
 const nameRule = [match(name, terminalName)];
 const valueRule = [
 	match(number, terminalNumber),
@@ -93,6 +96,7 @@ function parseOperation(ctx, leftOperand, i) {
 	let rule = [
 		match(bracketOpen, functionCallParser(leftOperand)),
 		match(dereference, dereferenceParser(leftOperand)),
+		match(squareBracketOpen, keyParser(leftOperand)),
 	];
 	operations.filter(op => op.strength >= i)
 		.forEach(op => rule.push(match(op.matcher, binaryOperationParser(leftOperand, op.symbol, op.name, op.strength))));
@@ -109,6 +113,16 @@ function dereferenceParser(expr) {
 		name.targetExpr = expr;
 		return parseOperation(ctx, name);
 	}
+}
+
+function keyParser(targetExpr) {
+	return ctx => {
+		ctx.skipWhitespace();
+		let keyExpr = parseExpression(ctx);
+		ctx.skipWhitespace();
+		ctx.parse(squareBracketCloseRule);
+		return new ast.KeyExpression(targetExpr, keyExpr);
+	};
 }
 
 function functionCallParser(ref) {

@@ -1,10 +1,6 @@
 import BigNumber from 'bignumber.js';
 
-export default function evaluate(expr, scope) {
-	return expr.visit(new ExpressionInterpreter(scope));
-}
-
-class ExpressionInterpreter {
+export default class ExpressionInterpreter {
 	constructor(scope) {
 		if (typeof scope !== 'object') {
 			throw new Error('no scope of type object provided');
@@ -34,6 +30,19 @@ class ExpressionInterpreter {
 	list(exprList) {
 		return exprList.map(e => e.visit(this));
 	}
+	key(expr) {
+		let target = expr.targetExpr.visit(this);
+		let key = expr.keyExpr.visit(this);
+		if (!(target instanceof Array)) {
+			throw new Error(`target expression ${expr.target} is not a list`);
+		}
+		try {
+			parseInt('' + key);
+		} catch(e) {
+			throw new Error(`index expression ${expr.target} is not an int`);
+		}
+		return target[key];
+	}
 	constructorRef(expr) {
 		let constr = expr.typeRefExpr.visit(this);
 		if (typeof constr !== 'object' || typeof constr.construct !== 'function') {
@@ -52,7 +61,7 @@ class ExpressionInterpreter {
 		try {
 			v = fn.apply(null, args);
 		} catch(e) {
-			e.message = 'failed to call ' + expr + ': ' + e.message;
+			e.message = `failed to call ${expr}: ${e.message}`;
 			throw e;
 		}
 		if (v === undefined) {
@@ -60,20 +69,24 @@ class ExpressionInterpreter {
 		}
 		return v;
 	}
-	assign(nameExpr, valueExpr) {
+	assign(targetExpr, valueExpr) {
 		let targetObj = this.scope;
-		if (nameExpr.targetExpr) {
-			targetObj = nameExpr.targetExpr.visit(this);
+		if (targetExpr.targetExpr) {
+			targetObj = targetExpr.targetExpr.visit(this);
 			let t = typeof targetObj
 			if (t !== 'object') {
-				throw new Error('cannot dereference ' + nameExpr.targetExpr + ' since it is not an object but ' + t);
+				throw new Error(`cannot dereference ${targetExpr.targetExpr} since it is not an object but ${t}`);
 			}
 		}
 		let v = valueExpr.visit(this);
 		if (v === undefined) {
 			throw new Error(valueExpr + ' returned undefined');
 		}
-		targetObj[nameExpr.name] = v;
+		let key = targetExpr.name;
+		if (targetExpr.keyExpr) {
+			key = targetExpr.keyExpr.visit(this);
+		}
+		targetObj[key] = v;
 		return v;
 	}
 	equal(leftExpr, rightExpr) {
@@ -121,7 +134,7 @@ class ExpressionInterpreter {
 	requireNumber(expr, op) {
 		let v = expr.visit(this);
 		if (!(v instanceof BigNumber)) {
-			throw new Error(op + ' operation requires numeric operands but ' + expr + ' returned ' + (typeof v));
+			throw new Error(`${op} operation requires numeric (BigNumber) operands but ${expr} returned ${typeof v}`);
 		}
 		return v;
 	}
@@ -129,7 +142,7 @@ class ExpressionInterpreter {
 		let v = expr.visit(this);
 		let t = typeof v;
 		if (t !== 'boolean') {
-			throw new Error(op + ' operation requires boolean operands but ' + expr + ' returned ' + t);
+			throw new Error(`${op} operation requires numeric operands but ${expr} returned ${t}`);
 		}
 		return v;
 	}

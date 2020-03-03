@@ -1,6 +1,6 @@
 import assert from 'assert';
 import ast from '../../src/expression/ast.js';
-import evaluate from '../../src/expression/interpreter.js';
+import ExpressionInterpreter from '../../src/expression/interpreter.js';
 import {parse} from '../../src/expression/parser.js';
 import BigNumber from 'bignumber.js';
 
@@ -25,6 +25,7 @@ describe('expression', function() {
 		['x = 5 == 3 + func(3, 2).b', true, 'x'],
 		['5 + calc(1,2) * 7', new BigNumber(26)],
 		['5 + calc(1,2) / 6', new BigNumber(5.5)],
+		['4 + mylist[0]', new BigNumber(127.5)],
 	]);
 })
 
@@ -45,7 +46,8 @@ function testCases(name, mapInput, addCases) {
 		let cases = [
 			[num1Expr, num1],
 			[nameExpr, resolvedName],
-			[new ast.ListExpression([num1Expr, nameExpr]), [num1, resolvedName]],
+			[new ast.ListExpression([nameExpr, num1Expr]), [resolvedName, num1]],
+			[new ast.KeyExpression(new ast.ListExpression([nameExpr, num1Expr]), new ast.NumberExpression('1')), num1],
 			[constrExpr, function(){}],
 			[new ast.FunctionCallExpression(new ast.NameExpression('func'), [num1Expr, nameExpr]), fn(num1, resolvedName)],
 			[new ast.FunctionCallExpression(constrExpr, [num1Expr, nameExpr]), fn(num1, resolvedName)],
@@ -71,11 +73,12 @@ function testCases(name, mapInput, addCases) {
 					myvar: resolvedName,
 					mystr: 'mockstring',
 					mynum: num1,
+					mylist: [num1],
 					func: fn,
 					calc: calcFn,
 					MyType: {construct: fn},
 				}
-				let actual = evaluate(mapInput(c[0]), scope);
+				let actual = mapInput(c[0]).visit(new ExpressionInterpreter(scope));
 				let expected = c[1];
 				assertEqual(expected, actual);
 				if (c.length > 2) {

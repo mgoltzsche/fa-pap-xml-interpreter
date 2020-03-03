@@ -2,36 +2,43 @@ import {DOMParser} from 'xmldom';
 import BigNumber from 'bignumber.js';
 import ast from '../expression/ast.js';
 import {parse} from '../expression/parser.js';
-import evaluate from '../expression/interpreter.js';
+import ExpressionInterpreter from '../expression/interpreter.js';
 
-export default function load(xmlstr) {
+export function load(xmlstr) {
 	return new PAP(new DOMParser().parseFromString(xmlstr));
 }
 
-function transformXML(el, transformers, r, comment) {
+function transformXML(el, transformers, r) {
 	let transform = transformers[el.tagName];
 	if (!transform) {
 		throw new Error(`Unexpected tag "${el.tagName}" in PAP XML`);
 	}
-	return transform(el, attrs(el), r, comment);
+	return transform(el, attrs(el), r);
 }
 
 function transformChildren(el, transformers, r) {
-	let comment = null;
 	let l = [];
 	for (let i in el.childNodes) {
 		let n = el.childNodes[i];
-		if (n.nodeType === 'comment') {
-			c.comment = n.nodeValue
-		} else if (n.tagName) {
-			l.push(transformXML(n, transformers, r, comment));
-			comment = null;
+		if (n.tagName) {
+			l.push(transformXML(n, transformers, r));
 		}
 	}
 	return l;
 }
 
-function transformVariable(el, a, r, comment) {
+function getComment(element) {
+	let prev = element.previousChild;
+	while (prev && !prev.tagName) {
+		if (prev.nodeType === 'comment') {
+			return prev.nodeValue;
+		}
+		prev = prev.previousChild;
+	}
+	return null;
+}
+
+function transformVariable(el, a, r) {
 	if (typeof a.name !== 'string') {
 		throw new Error(`PAP ${el.tagName} has no "name" string property`);
 	}
@@ -42,20 +49,17 @@ function transformVariable(el, a, r, comment) {
 	let varType = el.tagName;
 	let parentType = attrs(el.parentNode).type;
 	if (parentType) {
-		varType += `:${varType}`;
+		varType += `:${parentType}`;
 	}
-	let varExpr = new PAPVar(a.name, varType, a.type, expr, comment);
+	let varExpr = new PAPVar(a.name, varType, a.type, expr, getComment(el));
 	r.vars.push(varExpr);
 	return varExpr;
 }
 
-function transformMethod(el, a, r, comment) {
-	let name = a.name || 'MAIN'
-	if (r.methods[name]) {
-		throw new Error(`Duplicate method "${name}"`);
-	}
-	let expr = new PAPMethod(name, transformChildren(el, exprTransformers), comment);
-	r.methods[name] = expr;
+function transformMethod(el, a, r) {
+	let name = a.name || 'MAIN';
+	let expr = new PAPMethodExpression(name, new BlockExpression(transformChildren(el, exprTransformers)), getComment(el));
+	r.methods.push(expr);
 	return expr;
 }
 
@@ -68,12 +72,12 @@ function attrs(n) {
 	return o;
 }
 
-let papTransformers = {
+let papTransformer = {
 	PAP: (n,a,r) => {
 		if (r) {
 			throw new Error('Unexpected PAP tag as child of PAP XML');
 		}
-		r = {vars: [], methods: {}};
+		r = {vars: [], methods: []};
 		transformChildren(n, papChildTransformer, r);
 		return r;
 	}
@@ -99,12 +103,12 @@ let exprTransformers = {
 	EXECUTE: (n,a) => new ast.FunctionCallExpression(new ast.NameExpression(a.method), []),
 };
 let thenTransformers = {
-	THEN: n => (n,a,r) => transformChildren(n, exprTransformers, r),
-	ELSE: n => []
+	THEN: (n,a,r) => transformChildren(n, exprTransformers, r),
+	ELSE: _ => []
 };
 let elseTransformers = {
-	THEN: n => [],
-	ELSE: n => (n,a,r) => transformChildren(n, exprTransformers, r)
+	THEN: _ => [],
+	ELSE: (n,a,r) => transformChildren(n, exprTransformers, r)
 };
 
 class PAP {
@@ -113,42 +117,54 @@ class PAP {
 		if (docEl.tagName !== 'PAP') {
 			throw new Error('No PAP XML provided');
 		}
-		let obj = transformXML(docEl, papTransformers);
-		this.vars = obj.vars;
-		this.methods = obj.methods;
-		if (!this.methods.MAIN) {
+		let obj = transformXML(docEl, papTransformer);
+		if (obj.methods.filter(m => m.name === 'MAIN').length === 0) {
 			throw new Error('No MAIN method specified within PAP XML');
 		}
+		this.vars = obj.vars;
+		this.expr = new BlockExpression([...obj.methods, new ast.FunctionCallExpression(new ast.NameExpression('MAIN'), [])]);
 	}
-	evaluate(input) {
-		let scope = this.buildScope();
-		Object.assign(scope, input);
-		this.methods.MAIN.evaluate(scope);
+	inputs() {
+		return this.varDefs('INPUT');
 	}
-	buildScope() {
+	outputs() {
+		return this.varDefs('OUTPUT');
+	}
+	varDefs(type) {
+		let matcher = new RegExp(`^${type}(:|$)`);
+		return this.vars.filter(v => v.varType.match(matcher)).map(v => {return {
+			name: v.name,
+			type: v.type,
+		};});
+	}
+	evaluate(inputParams) {
 		let scope = newScope();
-		this.populateScope(scope);
-		return scope;
-	}
-	populateScope(scope) {
-		for (let varDef of this.vars) {
-			if (scope[varDef.name] !== undefined) {
-				throw new Error(`Duplicate definition of PAP var ${varDef.name}`);
+		let interpreter = new PAPInterpreter(scope);
+		populateScope(scope, interpreter, this.vars);
+		Object.assign(scope, inputParams);
+		this.expr.visit(interpreter);
+		let result = {};
+		for (let output of this.outputs()) {
+			let out = scope[output.name];
+			if (out === undefined) {
+				throw new Error(`Missing output ${output.name}`);
 			}
-			scope[varDef.name] = varDef.evaluate(scope);
+			result[output.name] = out;
 		}
-		for (let m of Object.values(this.methods)) {
-			if (scope[m.name] !== undefined) {
-				throw new Error(`Duplicate definition of PAP scope name ${varDef.name} (method)`);
-			}
-			scope[m.name] = function(method) {
-				return method.evaluate(scope);
-			}.bind(null, m);
-		}
+		return result;
 	}
 }
 
-class BigDecimal {
+function populateScope(scope, interpreter, vars) {
+	for (let varDef of vars) {
+		if (scope[varDef.name] !== undefined) {
+			throw new Error(`Duplicate definition of PAP var ${varDef.name}`);
+		}
+		scope[varDef.name] = varDef.evaluate(interpreter);
+	}
+}
+
+export class BigDecimal {
 	constructor(num) {
 		this.num = num;
 	}
@@ -165,11 +181,14 @@ class BigDecimal {
 	multiply(n) {
 		return new BigDecimal(this.num.times(n.num));
 	}
+	divide(n) {
+		return new BigDecimal(this.num.div(n.num));
+	}
 	compareTo(n) {
 		if (!(n instanceof BigDecimal)) {
 			throw new Error('No BigDecimal provided to compareTo(o)');
 		}
-		return this.num.comparedTo(n.num);
+		return new BigNumber(this.num.comparedTo(n.num));
 	}
 	toString() {
 		return this.num.toString();
@@ -180,7 +199,7 @@ function toInt(num) {
 	let numStr = num.toFixed();
 	let i = parseInt(numStr);
 	if (numStr !== '' + i) {
-		throw new Error(`Cannot convert ${num} to int`);
+		throw new Error(`Cannot convert "${num}" to int`);
 	}
 	return i;
 }
@@ -210,19 +229,22 @@ class PAPVar {
 			this.expr = parse(expr);
 		}
 	}
-	evaluate(scope) {
-		return this.expr ? evaluate(this.expr, scope) : undefined;
+	evaluate(interpreter) {
+		return this.expr ? this.expr.visit(interpreter) : undefined;
 	}
 }
 
-class PAPMethod {
-	constructor(name, exprList, comment) {
+class PAPMethodExpression {
+	constructor(name, expr, comment) {
 		this.name = name;
-		this.exprList = exprList;
+		this.expr = expr;
 		this.comment = comment;
 	}
-	evaluate(scope) {
-		return this.exprList.reduce((_,expr) => evaluate(expr, scope));
+	visit(visitor) {
+		return visitor.methodExpr(this);
+	}
+	toString() {
+		return `function ${this.name}() ${this.expr}`;
 	}
 }
 
@@ -233,15 +255,7 @@ class IfExpression {
 		this.elseExpr = elseExpr;
 	}
 	visit(visitor) {
-		let cond = this.condExpr.visit(visitor);
-		let t = typeof cond;
-		if (t !== 'boolean') {
-			throw new Error(`condition expression ${this.condExpr} must return a boolean but returned ${t}`);
-		}
-		if (cond) {
-			return this.thenExpr.visit(visitor);
-		}
-		return this.elseExpr.visit(visitor);
+		return visitor.ifExpr(this);
 	}
 	toString() {
 		return `if (${this.condExpr}) ${this.thenExpr} else ${this.elseExpr}`;
@@ -250,13 +264,57 @@ class IfExpression {
 
 class BlockExpression {
 	constructor(exprList) {
+		if (!exprList.map) {
+			throw new Error(`No expressions provided: ${typeof exprList}: ${exprList}`);
+		}
 		this.exprList = exprList;
 	}
 	visit(visitor) {
-		return this.exprList.reduce((_,expr) => expr.visit(visitor), null);
+		try {
+			return visitor.blockExpr(this);
+		} catch(e) {
+			if (!e.errInfoAdded) {
+				e.message += `\n\terror occured in code block:\n\t\t${this.toString().replace(/\n/g, '\n\t\t')}`;
+				e.errInfoAdded = true;
+			}
+			throw e;
+		}
 	}
 	toString() {
-		let item = this.exprList.map(e => `\n  ${e}`).join('');
+		let items = this.exprList.map(e => `\n${e}`).join('').replace(/\n/g, '\n  ');
 		return `{${items}\n}`;
+	}
+}
+
+class PAPInterpreter extends ExpressionInterpreter {
+	constructor(scope) {
+		super(scope);
+	}
+	blockExpr(expr) {
+		let self = this;
+		let m = expr.exprList.map(e => e.visit(self));
+		if (m.length === 0) {
+			return null;
+		}
+		return m[m.length - 1];
+	}
+	ifExpr(expr) {
+		let cond = expr.condExpr.visit(this);
+		let t = typeof cond;
+		if (t !== 'boolean') {
+			throw new Error(`condition expression ${expr.condExpr} must return a boolean but returned ${t}`);
+		}
+		if (cond) {
+			return expr.thenExpr.visit(this);
+		}
+		return expr.elseExpr.visit(this);
+	}
+	methodExpr(expr) {
+		if (this.scope[expr.name] !== undefined) {
+			throw new Error(`Duplicate definition of PAP scope name ${varDef.name} (method)`);
+		}
+		let fn = expr.expr.visit.bind(expr.expr, this);
+		this.scope[expr.name] = fn;
+		return fn;
 	}
 }
