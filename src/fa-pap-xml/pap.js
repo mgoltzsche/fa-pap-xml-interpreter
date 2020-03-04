@@ -28,12 +28,12 @@ function transformChildren(el, transformers, r) {
 }
 
 function getComment(element) {
-	let prev = element.previousChild;
+	let prev = element.previousSibling;
 	while (prev && !prev.tagName) {
-		if (prev.nodeType === 'comment') {
+		if (prev.nodeType === 8) {
 			return prev.nodeValue;
 		}
-		prev = prev.previousChild;
+		prev = prev.previousSibling;
 	}
 	return null;
 }
@@ -121,6 +121,7 @@ class PAP {
 		if (obj.methods.filter(m => m.name === 'MAIN').length === 0) {
 			throw new Error('No MAIN method specified within PAP XML');
 		}
+		this.name = attrs(docEl).name;
 		this.vars = obj.vars;
 		this.expr = new BlockExpression([...obj.methods, new ast.FunctionCallExpression(new ast.NameExpression('MAIN'), [])]);
 	}
@@ -207,7 +208,8 @@ class VarDeclarations {
 		for (let v of this.vars) {
 			let inVal = input[v.name];
 			if (inVal === '' || inVal === undefined || inVal === null) {
-				throw new Error(`Undefined variable ${v.name}`);
+				//throw new Error(`Undefined variable ${v.name}`);
+				continue;
 			}
 			let converter = valueConverters[v.type];
 			if (!converter) {

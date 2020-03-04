@@ -67,8 +67,9 @@ function testCases(name, mapInput, addCases) {
 			...addCases
 		];
 		for (let c of cases) {
-			let constrName = c[0].constructor ? ' ' + c[0].constructor.name : '';
-			it('should evaluate' + constrName + ': ' + c[0], function(c) {
+			let input = c[0]
+			let expected = c[1];
+			it(`should evaluate ${input.constructor.name} "${input}" to ${expected}`, function(c, input, expected) {
 				let scope = {
 					myvar: resolvedName,
 					mystr: 'mockstring',
@@ -78,14 +79,13 @@ function testCases(name, mapInput, addCases) {
 					calc: calcFn,
 					MyType: {construct: fn},
 				}
-				let actual = mapInput(c[0]).visit(new ExpressionInterpreter(scope));
-				let expected = c[1];
+				let actual = mapInput(input).visit(new ExpressionInterpreter(scope));
 				assertEqual(expected, actual);
 				if (c.length > 2) {
 					let expectedName = c[2]
 					assertEqual(expected, scope[expectedName]);
 				}
-			}.bind(null, c));
+			}.bind(null, c, input, expected));
 		}
 	});
 }

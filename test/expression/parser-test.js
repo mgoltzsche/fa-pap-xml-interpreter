@@ -81,15 +81,18 @@ describe('expression', function() {
 			['a||b==c+3-x', 'a||(b==(c+3-x))'],
 		];
 		for (let c of cases) {
-			it('should parse: ' + c[0], function(c) {
-				assert.equal(testee.parse(c[0]).toString(), expectedExpr(c));
-			}.bind(null, c));
+			let input = c[0];
+			let expected = expectedExpr(c);
+			it(`should parse "${input}" to ${expected}`, function(input, expected) {
+				assert.equal(testee.parse(input).toString(), expected);
+			}.bind(null, input, expected));
 		}
 		for (let c of cases) {
 			let whExpr = ' ' + c[0].replace(/==|!=|<=|>=|&&|\|\||[^a-z_0-9\.\- ]|[a-z_ ]+\.|\.[a-z_ ]+|[a-z0-9]+-/ig, ' $& ') + ' ';
-			it('should parse wh: ' + whExpr, function(c, whExpr) {
-				assert.equal(testee.parse(whExpr).toString(), expectedExpr(c));
-			}.bind(null, c, whExpr));
+			let expected = expectedExpr(c);
+			it(`should parse (with ws) "${whExpr}" to ${expected}`, function(c, whExpr, expected) {
+				assert.equal(testee.parse(whExpr).toString(), expected);
+			}.bind(null, c, whExpr, expected));
 		}
 		let invalid = [
 			'',
@@ -135,7 +138,7 @@ describe('expression', function() {
 			'x x',
 		];
 		for (let expr of invalid) {
-			it('should reject: ' + expr, function(expr) {
+			it('should reject ' + expr, function(expr) {
 				let result;
 				try {
 					result = testee.parse(expr);
