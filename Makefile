@@ -12,3 +12,7 @@ build-image:
 
 clean:
 	rm -rf dist
+
+publish: build
+	rm -rf docs
+	cp -r dist docs

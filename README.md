@@ -3,7 +3,7 @@ An interpreter for the german tax office's [program flow format](https://www.bmf
 
 ... and an experiment with ECMAScript 6 and webpack.  
 
-WORK IN PROGRESS!
+It is served here [here](https://mgoltzsche.github.io/fa-pap-xml-interpreter/).
 
 ## Build
 
