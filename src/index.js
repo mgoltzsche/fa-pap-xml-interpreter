@@ -1,3 +1,3 @@
 import {PAPView} from './ui/pap-ui.js';
 
-new PAPView(document.body);
+document.body.appendChild(new PAPView().dom);

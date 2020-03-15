@@ -1,44 +1,48 @@
 import './style.scss';
-import {load} from '../fa-pap-xml/pap.js';
+import {loadPAP} from '../fa-pap-xml/pap.js';
 import Lohnsteuer2020 from '../codes/Lohnsteuer2020.xml.xhtml';
 import 'stringify-entities';
 
+const traceTypes = {'assign': true, 'ifExpr': true};
+
 export class PAPView {
-	constructor(parentEl) {
+	constructor() {
 		let tableCss = {className: 'table'};
-		let calcButton = el('input', {type: 'submit', value: 'Berechnen', onclick: this.calculate.bind(this)});
+		let buttons = el('div', {className: 'buttons'},
+			el('input', {type: 'submit', value: 'Speichern & Berechnen', onclick: this.calculate.bind(this)}),
+			el('button', {onclick: this.reset.bind(this)}, textEl('span', 'Löschen & Zurücksetzen'))
+		);
 		this.inputContainerEl = el('div', tableCss);
 		this.outputContainerEl = el('div', tableCss);
-		this.codeEl = el('pre', {});
 		this.errCssClass = 'error-hint';
 		this.errEl = el('pre', {className: this.errCssClass});
+		this.traceEl = el('div', {className: 'table trace-table'});
+		this.papNameEl = el('output', {});
 		this.form = el('form', {onsubmit: _ => false},
 			el('div', tableCss,
 				el('div', {},
 					el('label', {'for': 'papfile'}, textEl('span', 'PAP-XML-Datei')),
 					el('input', {type: 'file', name: 'papfile', onchange: this.onPAPChanged.bind(this)}),
-					el('div', {}, el('a', {href: 'https://www.bmf-steuerrechner.de/interface/pseudocodes.xhtml'}, textEl('span', 'Vom Finanzamt bereitgestellte PAP-XML-Dateien'))),
+					el('a', {href: '#pseudocode', onclick: this.showPseudoCode.bind(this)}, this.papNameEl),
+					el('div', {}, 
+						textEl('span', '| '),
+						el('a', {href: 'https://www.bmf-steuerrechner.de/interface/pseudocodes.xhtml', target: 'blank'}, textEl('span', 'Vom Finanzamt bereitgestellte PAP-XML-Dateien'))
+					),
 				)
 			),
 			textEl('h2', 'Eingabe'),
 			this.inputContainerEl,
-			calcButton,
+			buttons,
 			textEl('h2', 'Ausgabe'),
 			this.outputContainerEl,
+			textEl('h2', 'Rechenweg'),
+			this.traceEl
 		);
 		let pap = this.loadPAP(Lohnsteuer2020);
-		parentEl.appendChild(el('div', {},
-			el('a', {className: 'github-link', href: 'https://github.com/mgoltzsche/fa-xml-interpreter'}, textEl('span', 'on GitHub')),
-			textEl('h1', 'PAP XML Interpreter'),
-			textEl('p', `Mit dieser JavaScript-App können vom Finanzamt bereitgestellte PAP-XML-Dateien interaktiv verarbeitet werden. 
-				Neben der eingebauten ${pap.name} können auch andere PAP-Dateien geladen werden.`),
-			textEl('p', 'Dies ist keine offizielle App und der Autor übernimmt keine Haftung für die Richtigkeit der Angaben und Berechnungen.'),
-			textEl('p', 'Benutzereingaben werden von dieser App nicht an andere Server geschickt, da die Verarbeitung im Browser stattfindet.'),
+		this.dom = el('div', {},
 			this.errEl,
-			this.form,
-			textEl('h2', 'Pseudocode'),
-			this.codeEl
-		));
+			this.form
+		);
 	}
 	onPAPChanged(evt) {
 		let files = evt.target.files;
@@ -56,10 +60,10 @@ export class PAPView {
 		};
 		reader.readAsBinaryString(files[0]);
 	}
-	loadPAP(papStr) {
+	loadPAP(papXmlStr) {
 		this.err('');
 		try {
-			let pap = load(papStr);
+			let pap = loadPAP(papXmlStr);
 			let state = {
 				pap: pap,
 				defaults: pap.defaults(),
@@ -71,26 +75,60 @@ export class PAPView {
 			this.err(e.toString());
 			throw e;
 		}
+		this.papNameEl.value = this.state.pap.name;
 		this.populateFields('input');
 		this.applyDefaults();
 		this.populateFields('output');
-		this.populatePAPCode();
+		this.loadInputState();
 		return this.state.pap;
 	}
 	err(msg) {
 		this.errEl.className = this.errCssClass + (msg ? ' active' : '');
 		this.errEl.innerHTML = msg;
 	}
+	reset() {
+		this.err('');
+		this.traceEl.innerHTML = '';
+		this.clearInputState();
+	}
+	showPseudoCode() {
+		let papName = this.state.pap.name;
+		let popup = window.open('', papName, 'width=600,height=400');
+		let docEl = popup.document.documentElement;
+		docEl.innerHTML = '';
+		docEl.appendChild(el('head', {}, textEl('title', 'Pseudocode ' + papName)));
+		docEl.appendChild(el('body', {}, textEl('pre', this.state.pap.expr.toString())));
+		popup.focus();
+		return false;
+	}
 	calculate() {
 		this.err('');
+		this.traceEl.innerHTML = '';
+		this.saveInputState();
+		let calculated = false;
 		try {
 			let output = this.state.pap.evaluate(this.state.inputs.createValues(this.inputValues()));
 			for (let out of this.state.outputs.vars) {
 				this.form.elements[out.name].value = '' + output[out.name];
 			}
+			calculated = true;
+			this.populateTrace(this.state.pap.trace, 0);
 		} catch(e) {
 			this.err(e.toString());
+			if (!calculated) {
+				this.populateTrace(this.state.pap.trace, 0);
+			}
 			throw e;
+		}
+	}
+	populateTrace(trace, depth) {
+		for (let e of trace) {
+			let newDepth = depth;
+			if (traceTypes[e.type]) {
+				this.traceEl.appendChild(traceEl(e, depth));
+				newDepth++;
+			}
+			this.populateTrace(e.evaluatedChildren, newDepth);
 		}
 	}
 	populateFields(type) {
@@ -107,9 +145,34 @@ export class PAPView {
 			this.form.elements[input.name].value = valStr;
 		}
 	}
-	populatePAPCode() {
-		this.codeEl.innerHTML = '';
-		this.codeEl.appendChild(document.createTextNode(this.state.pap.expr.toString()));
+	saveInputState() {
+		if (typeof(Storage) !== 'undefined') {
+			for (let input of this.state.inputs.vars) {
+				localStorage.setItem(input.name, this.form.elements[input.name].value);
+			}
+		} else {
+			console.log('WARN: localStorage is unsupported');
+		}
+	}
+	loadInputState() {
+		if (typeof(Storage) !== 'undefined') {
+			for (let input of this.state.inputs.vars) {
+				let value = localStorage.getItem(input.name);
+				if (value !== null && value !== '') {
+					this.form.elements[input.name].value = value;
+				}
+			}
+		} else {
+			console.log('WARN: localStorage is unsupported');
+		}
+	}
+	clearInputState() {
+		if (typeof(Storage) !== 'undefined') {
+			localStorage.clear();
+		} else {
+			console.log('WARN: localStorage is unsupported');
+		}
+		this.applyDefaults();
 	}
 	inputValues() {
 		let values = {};
@@ -120,11 +183,52 @@ export class PAPView {
 	}
 }
 
+function traceEl(item, depth) {
+	let addClassName = '';
+	let exprStr = '';
+	let valStr = '= ' + item.value;
+	let debugItem = item;
+	if (item.type === 'ifExpr' && item.condition) {
+		debugItem = item.condition;
+		let leafExpr = item.evaluatedChildren.length === 0;
+		if (leafExpr) {
+			addClassName = ' inactive-leaf';
+		}
+		if (item.condition.value === true || leafExpr) {
+			exprStr = `if ${item.condition.expr}:`;
+		} else {
+			exprStr = `if !(${item.condition.expr}):`;
+		}
+		valStr = '';
+	} else {
+		exprStr = item.expr.toString();
+	}
+	return el('div', {className: 'trace-row' + addClassName},
+		el('div', {className: 'trace-expr'},
+			textEl('pre', ' '.repeat(depth*4) + exprStr),
+			textEl('pre', collectTrace(debugItem.evaluatedChildren, 0, []).join('\n')),
+		),
+		textEl('span', valStr)
+	);
+}
+
+function collectTrace(trace, depth, result) {
+	for (let e of trace) {
+		//let v = typeof e['value'] === 'function' ? 'function() {...}' : '' + e['value']; // TODO: find out why this causes a function invokation when enabled!
+		//let s = (e.value === null || e.value === undefined ? '' + e.value : e.value.toString()).replace(/(\r\n|\r|\n).*$/g, '...');
+		if (typeof e.value !== 'function') {
+			result.push(`${e.expr}: ${e.value}`)
+		}
+		collectTrace(e.evaluatedChildren, depth+1, result)
+	}
+	return result;
+}
+
 function formField(varDecl, fieldTagName) {
 	return el('div', {},
 		el('label', {'for': varDecl.name}, textEl('span', varDecl.name)),
 		el(fieldTagName, {name: varDecl.name}),
-		textEl('div', varDecl.comment || ''),
+		textEl('pre', varDecl.comment || ''),
 	);
 }
 

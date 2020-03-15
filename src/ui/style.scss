@@ -1,16 +1,47 @@
+@mixin box-shadow($shadow...) {
+	-webkit-box-shadow: $shadow;
+	   -moz-box-shadow: $shadow;
+	        box-shadow: $shadow;
+}
+
 body {
+	background: #eeeedd;
 	color: #111111;
 	font-family: Sans-Serif;
+	padding-bottom: 47px;
+}
+
+input[type=submit], button {
+	background: #77ccee;
+	border: none;
+	padding: 10px;
+	margin: 10px;
+	font-weight: bold;
+	cursor: pointer;
+}
+
+button {
+	background: #eecc77;
+}
+
+.buttons {
+	position: fixed;
+	bottom: 0px;
+	right: 0px;
+}
+
+output {
+	font-weight: bold;
 }
 
 .table {
 	display: table;
-	border-spacing: 1em;
+	border-spacing: 0.5em;
 
 	& > div {
 		display: table-row;
 
-		& > label, & > input, & > output, & > div {
+		& > * {
 			display: table-cell;
 		}
 		& > label {
@@ -18,20 +49,60 @@ body {
 			font-weight: bold;
 		}
 	}
+
+	&.trace-table {
+		border-spacing: 0;
+
+		.trace-row {
+			&.inactive-leaf pre:first-child {
+				color: #777777;
+				text-decoration: line-through;
+			}
+			span {
+				color: #555555;
+			}
+			pre {
+				position: absolute;
+				display: none;
+				background: #ddeeee;
+				border: 1px solid #333333;
+				margin: 0 0 0 100px;
+				padding: 5px;
+				@include box-shadow(1px 3px 10px rgba(0,0,0,.5));
+			}
+			pre:first-child {
+				position: static;
+				display: block;
+				background: transparent;
+				border: none;
+				@include box-shadow(none);
+				margin: 0;
+				padding: 0;
+			}
+			&:hover {
+				background: #ffffff;
+
+				pre {
+					display: block;
+				}
+			}
+		}
+	}
 }
 
 .error-hint {
 	position: fixed;
-	bottom: 0px;
+	bottom: 47px;
 	right: 0px;
 	padding: 10px;
 	margin: 10px;
-	background: #dd1100;
-	border: 2 px double #dd1100;
+	background: #fff0ea;
+	border: 4px solid #dd1100;
 	display: none;
 	max-width: 50%;
 	max-height: 50%;
 	overflow: auto;
+	@include box-shadow(1px 3px 10px rgba(0,0,0,.5));
 
 	&.active {
 		display: block;

@@ -45,7 +45,7 @@ class NumberExpression {
 		this.literal = true;
 	}
 	visit(visitor) {
-		return visitor.number(this.num);
+		return visitor.number(this);
 	}
 	toString() {
 		return this.num;
@@ -110,7 +110,7 @@ class BinaryOperationExpression {
 		if (!op) {
 			throw new Error(`Unsupported visitor function "${this.visitorOp}"`);
 		}
-		return visitor[this.visitorOp](this.leftExpr, this.rightExpr);
+		return visitor[this.visitorOp](this);
 	}
 	toString() {
 		let right = this.rightExpr instanceof BinaryOperationExpression ? `(${this.rightExpr})` : this.rightExpr;
@@ -121,7 +121,7 @@ class BinaryOperationExpression {
 class ConstructorRefExpression {
 	constructor(typeRefExpr) {
 		if (typeRefExpr.literal) {
-			throw new SemanticError('Cannot use literal ' + typeRefExpr + ' as constructor');
+			throw new SemanticError(`Cannot use literal ${typeRefExpr} as constructor`);
 		}
 		this.typeRefExpr = typeRefExpr;
 		this.literal = false;

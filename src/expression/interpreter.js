@@ -1,26 +1,77 @@
 import BigNumber from 'bignumber.js';
 
-export default class ExpressionInterpreter {
+BigNumber.set({DECIMAL_PLACES: 20, ROUNDING_MODE: BigNumber.ROUND_HALF_UP})
+
+// Makes the interpreter collect all evaluation results in the 'evaluated' list.
+export function trace(interpreter) {
+	interpreter.evaluatedChildren = [];
+	interpreter.evaluationStack = [interpreter];
+	for (const name of props(interpreter)) {
+		let fn = interpreter[name];
+		if (typeof fn === 'function') {
+			interpreter[name] = ((fn,expr,parentPartName) => {
+				let traceItem = {type: name, expr: expr, value: undefined, evaluatedChildren: [], condition: null};
+				if (!expr.literal) {
+					let currStackItem = interpreter.evaluationStack[interpreter.evaluationStack.length-1];
+					if (parentPartName) {
+						if (currStackItem[parentPartName]) {
+							throw new Error(`Last trace stack item's named sub trace "${parentPartName}" is already set`);
+						}
+						currStackItem[parentPartName] = traceItem;
+					} else {
+						currStackItem.evaluatedChildren.push(traceItem);
+					}
+				}
+				interpreter.evaluationStack.push(traceItem);
+				let v = fn.call(interpreter, expr);
+				interpreter.evaluationStack.pop();
+				traceItem.value = v;
+				return v;
+			}).bind(null, fn)
+		}
+	}
+}
+
+function props(obj) {
+    var p = [];
+    for (; obj != null; obj = Object.getPrototypeOf(obj)) {
+        var op = Object.getOwnPropertyNames(obj);
+        for (var i=0; i<op.length; i++)
+            if (p.indexOf(op[i]) == -1)
+                 p.push(op[i]);
+    }
+    return p;
+}
+
+export class InterpreterError extends Error {
+	constructor(msg, expr, scope) {
+		super(msg);
+		this.expr = expr;
+		this.scope = scope;
+	}
+}
+
+export class ExpressionInterpreter {
 	constructor(scope) {
 		if (typeof scope !== 'object') {
 			throw new Error('no scope of type object provided');
 		}
 		this.scope = scope;
 	}
-	number(num) {
-		return new BigNumber(num);
+	number(expr) {
+		return new BigNumber(''+expr.num);
 	}
 	name(expr) {
 		let targetObj = this.scope;
 		if (expr.targetExpr) {
 			targetObj = expr.targetExpr.visit(this);
 			if (typeof targetObj !== 'object') {
-				throw new Error(expr.targetExpr + ' is not an object');
+				throw new InterpreterError(`${expr.targetExpr} is not an object`, expr.targetExpr, this.scope);
 			}
 		}
 		let v = targetObj[expr.name];
-		if (v === undefined) {
-			throw new Error(expr + ' is undefined');
+		if (v === undefined || v === null) {
+			throw new InterpreterError(`${expr} is ${v}`, expr, this.scope);
 		}
 		if (typeof v === 'function') {
 			v = v.bind(targetObj);
@@ -34,19 +85,22 @@ export default class ExpressionInterpreter {
 		let target = expr.targetExpr.visit(this);
 		let key = expr.keyExpr.visit(this);
 		if (!(target instanceof Array)) {
-			throw new Error(`target expression ${expr.target} is not a list`);
+			throw new InterpreterError(`target expression ${expr.targetExpr} is not a list`, expr.targetExpr, this.scope);
 		}
-		try {
-			parseInt('' + key);
-		} catch(e) {
-			throw new Error(`index expression ${expr.target} is not an int`);
+		let n = new BigNumber(key);
+		if (n.toFixed() !== n.integerValue().toFixed()) {
+			throw new InterpreterError(`index expression ${expr.keyExpr} is not an int`, expr.keyExpr, this.scope);
 		}
-		return target[key];
+		let value = target[key];
+		if (value === undefined || value === null) {
+			throw new InterpreterError(`expression ${expr} returned ${value}`, expr, this.scope);
+		}
+		return value;
 	}
 	constructorRef(expr) {
 		let constr = expr.typeRefExpr.visit(this);
 		if (typeof constr !== 'object' || typeof constr.construct !== 'function') {
-			throw new Error(expr.typeRefExpr + ' is not constructable');
+			throw new InterpreterError(`${expr.typeRefExpr} is not constructable`, expr.typeRefExpr, this.scope);
 		}
 		return constr.construct;
 	}
@@ -54,33 +108,35 @@ export default class ExpressionInterpreter {
 		let fn = expr.refExpr.visit(this);
 		let t = typeof fn;
 		if (t !== 'function') {
-			throw new Error(expr.refExpr + ' is not a function but ' + t);
+			throw new InterpreterError(`${expr.refExpr} is not a function but ${t}`, expr.refExpr, this.scope);
 		}
 		let args = expr.argExprList.map(e => e.visit(this));
 		let v;
 		try {
 			v = fn.apply(null, args);
 		} catch(e) {
-			e.message = `failed to call ${expr}: ${e.message}`;
+			e.message = `${expr}: ${e.message}`;
 			throw e;
 		}
-		if (v === undefined) {
-			throw new Error(expr + ' returned undefined');
+		if (v === undefined || v === null) {
+			throw new InterpreterError(`${expr} returned ${v}`, expr, this.scope);
 		}
 		return v;
 	}
-	assign(targetExpr, valueExpr) {
+	assign(expr) {
+		let targetExpr = expr.leftExpr;
+		let valueExpr = expr.rightExpr;
 		let targetObj = this.scope;
 		if (targetExpr.targetExpr) {
 			targetObj = targetExpr.targetExpr.visit(this);
 			let t = typeof targetObj
 			if (t !== 'object') {
-				throw new Error(`cannot dereference ${targetExpr.targetExpr} since it is not an object but ${t}`);
+				throw new InterpreterError(`cannot dereference ${targetExpr.targetExpr} since it is not an object but ${t}`, targetExpr.targetExpr, this.scope);
 			}
 		}
 		let v = valueExpr.visit(this);
-		if (v === undefined) {
-			throw new Error(valueExpr + ' returned undefined');
+		if (v === undefined || v === null) {
+			throw new InterpreterError(`${valueExpr} returned ${v}`, valueExpr, this.scope);
 		}
 		let key = targetExpr.name;
 		if (targetExpr.keyExpr) {
@@ -89,61 +145,76 @@ export default class ExpressionInterpreter {
 		targetObj[key] = v;
 		return v;
 	}
-	equal(leftExpr, rightExpr) {
-		let left = leftExpr.visit(this);
-		let right = rightExpr.visit(this);
-		if (left instanceof BigNumber && right instanceof BigNumber) {
-			left = left.toFixed();
-			right = right.toFixed();
-		}
-		return left === right;
+	equal(expr) {
+		return equal(this, expr);
 	}
-	notEqual(leftExpr, rightExpr) {
-		return !this.equal(leftExpr, rightExpr);
+	notEqual(expr) {
+		return !equal(this, expr);
 	}
-	or(leftExpr, rightExpr) {
-		return this.requireBool(leftExpr, '||') || this.requireBool(rightExpr, '||');
+	or(expr) {
+		return binaryOperationExpression(this, expr, requireBool, (a,b) => a || b);
 	}
-	and(leftExpr, rightExpr) {
-		return this.requireBool(leftExpr, '&&') && this.requireBool(rightExpr, '&&');
+	and(expr) {
+		return binaryOperationExpression(this, expr, requireBool, (a,b) => a && b);
 	}
-	plus(leftExpr, rightExpr) {
-		return this.requireNumber(leftExpr, '+').plus(this.requireNumber(rightExpr, '+'));
+	plus(expr) {
+		return binaryOperationExpression(this, expr, requireNumber, (a,b) => a.plus(b));
 	}
-	minus(leftExpr, rightExpr) {
-		return this.requireNumber(leftExpr, '-').minus(this.requireNumber(rightExpr, '-'));
+	minus(expr) {
+		return binaryOperationExpression(this, expr, requireNumber, (a,b) => a.minus(b));
 	}
-	multiply(leftExpr, rightExpr) {
-		return this.requireNumber(leftExpr, '*').times(this.requireNumber(rightExpr, '*'));
+	multiply(expr) {
+		return binaryOperationExpression(this, expr, requireNumber, (a,b) => a.times(b));
 	}
-	divide(leftExpr, rightExpr) {
-		return this.requireNumber(leftExpr, '/').div(this.requireNumber(rightExpr, '/'));
+	divide(expr) {
+		return binaryOperationExpression(this, expr, requireNumber, (a,b) => a.div(b));
 	}
-	gt(leftExpr, rightExpr) {
-		return this.requireNumber(leftExpr, '>').gt(this.requireNumber(rightExpr, '>'));
+	gt(expr) {
+		return binaryOperationExpression(this, expr, requireNumber, (a,b) => a.gt(b));
 	}
-	lt(leftExpr, rightExpr) {
-		return this.requireNumber(leftExpr, '<').lt(this.requireNumber(rightExpr, '<'));
+	lt(expr) {
+		return binaryOperationExpression(this, expr, requireNumber, (a,b) => a.lt(b));
 	}
-	gte(leftExpr, rightExpr) {
-		return this.requireNumber(leftExpr, '>=').gte(this.requireNumber(rightExpr, '>='));
+	gte(expr) {
+		return binaryOperationExpression(this, expr, requireNumber, (a,b) => a.gte(b));
 	}
-	lte(leftExpr, rightExpr) {
-		return this.requireNumber(leftExpr, '<=').lte(this.requireNumber(rightExpr, '<='));
+	lte(expr) {
+		return binaryOperationExpression(this, expr, requireNumber, (a,b) => a.lte(b));
 	}
-	requireNumber(expr, op) {
-		let v = expr.visit(this);
-		if (!(v instanceof BigNumber)) {
-			throw new Error(`${op} operation requires numeric (BigNumber) operands but ${expr} returned ${typeof v}`);
-		}
-		return v;
+}
+
+function equal(interpreter, expr) {
+	let left = expr.leftExpr.visit(interpreter);
+	let right = expr.rightExpr.visit(interpreter);
+	if (left instanceof BigNumber && right instanceof BigNumber) {
+		left = left.toFixed();
+		right = right.toFixed();
 	}
-	requireBool(expr, op) {
-		let v = expr.visit(this);
-		let t = typeof v;
-		if (t !== 'boolean') {
-			throw new Error(`${op} operation requires numeric operands but ${expr} returned ${t}`);
-		}
-		return v;
+	return left === right;
+}
+
+function binaryOperationExpression(interpreter, expr, typeSafeOperand, op) {
+	try {
+		let left = typeSafeOperand(interpreter, expr.leftExpr);
+		let right = typeSafeOperand(interpreter, expr.rightExpr);
+		return op(left, right);
+	} catch(e) {
+		e.message = `${expr.opSymbol} operation ${expr} failed: ${e.message}`;
+		throw e;
 	}
+}
+function requireNumber(interpreter, expr) {
+	let v = expr.visit(interpreter);
+	if (!(v instanceof BigNumber) || v.isNaN() || !v.isFinite()) {
+		throw new InterpreterError(`numeric (BigNumber) value required but ${expr} returned ${typeof v}($v)`, expr, interpreter.scope);
+	}
+	return v;
+}
+function requireBool(interpreter, expr) {
+	let v = expr.visit(interpreter);
+	let t = typeof v;
+	if (t !== 'boolean') {
+		throw new InterpreterError(`numeric value required but ${expr} returned ${t}`, expr, interpreter.scope);
+	}
+	return v;
 }

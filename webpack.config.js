@@ -7,6 +7,7 @@ module.exports = {
 		path: path.resolve(__dirname, 'dist'),
 		filename: 'index_bundle.js'
 	},
+	devtool: 'source-map',
 	module: {
 		rules: [
 			{
@@ -26,6 +27,6 @@ module.exports = {
 		],
 	},
   plugins: [
-    new HtmlWebpackPlugin(),
+    new HtmlWebpackPlugin({template: './src/index.html'}),
   ]
 }

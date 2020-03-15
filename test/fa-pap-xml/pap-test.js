@@ -1,4 +1,4 @@
-import {load, BigDecimal} from '../../src/fa-pap-xml/pap.js';
+import {loadPAP} from '../../src/fa-pap-xml/pap.js';
 import fs from 'fs';
 import assert from 'assert';
 import BigNumber from 'bignumber.js';
@@ -7,9 +7,9 @@ describe('FA PAP XML Interpreter', function() {
 	describe('load(xmlStr)...evaluate(input)', function() {
 		it('load', function() {
 			let Lohnsteuer2020 = fs.readFileSync('src/codes/Lohnsteuer2020.xml.xhtml', 'utf8');
-			
+
 			// Load PAP
-			let pap = load(Lohnsteuer2020);
+			let pap = loadPAP(Lohnsteuer2020);
 			assert(pap, 'pap');
 
 			// Assert inputs
@@ -59,6 +59,42 @@ describe('FA PAP XML Interpreter', function() {
 			for (let [k,v] of Object.entries(evaluated)) {
 				assert(v, `output ${k} should not be empty`);
 			}
+		});
+	});
+
+	describe('load(pap2020).evaluate({...}) (real scenario)', function() {
+		it('scenario', function() {
+			let Lohnsteuer2020 = fs.readFileSync('src/codes/Lohnsteuer2020.xml.xhtml', 'utf8');
+			let pap = loadPAP(Lohnsteuer2020);
+			assert(pap, 'pap');
+			let inputDecl = pap.inputs();
+			let input = {
+				af: 0,
+				STKL: 1,
+				//JFREIB: 0,
+				//JHINZU: 0,
+				//JRE4: '6000000',
+				//JVBEZ: 0,
+				RE4: '6000000',
+				KRV: 1,
+				KVZ: '0.7',
+
+				LZZ: 1,
+				LZZFREIB: 0,
+				LZZHINZU: 0,
+
+				R: 0,
+				VBEZ: 0,
+				ZMVB: 0,
+				ZKF: 0,
+				ALTER1: 0,
+				SONSTB: 0,
+				VKAPA: 0,
+				VMT: 0,
+			};
+			let output = pap.evaluate(inputDecl.createValues(input));
+			assert.equal('1194900', ''+output['LSTLZZ'], 'resulting tax wage cent')
+			assert.equal('65719', ''+output['SOLZLZZ'], 'resulting solidarity commission cent')
 		});
 	});
 });
