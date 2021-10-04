@@ -1,6 +1,6 @@
 import './style.scss';
 import {loadPAP} from '../fa-pap-xml/pap.js';
-import Lohnsteuer2020 from '../codes/Lohnsteuer2020.xml.xhtml';
+import Lohnsteuer2021 from '../codes/Lohnsteuer2021.xml.xhtml';
 import 'stringify-entities';
 
 const traceTypes = {'assign': true, 'ifExpr': true};
@@ -38,7 +38,7 @@ export class PAPView {
 			textEl('h2', 'Rechenweg'),
 			this.traceEl
 		);
-		let pap = this.loadPAP(Lohnsteuer2020);
+		let pap = this.loadPAP(Lohnsteuer2021);
 		this.dom = el('div', {},
 			this.errEl,
 			this.form
